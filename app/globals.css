@@ -25,3 +25,31 @@ body {
     text-wrap: balance;
   }
 }
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .print\:hidden {
+    display: none !important;
+  }
+  #dossier-content h1, #dossier-content h2, #dossier-content h3 {
+    color: black !important;
+  }
+  #dossier-content p, #dossier-content li, #dossier-content td {
+    color: #333 !important;
+  }
+  #dossier-content strong {
+    color: black !important;
+  }
+  #dossier-content table {
+    border: 1px solid #ccc !important;
+  }
+  #dossier-content td {
+    border-bottom: 1px solid #eee !important;
+  }
+  #dossier-content hr {
+    border-color: #ccc !important;
+  }
+}
