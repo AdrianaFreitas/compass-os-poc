@@ -4,6 +4,8 @@ import { supabase } from '@/lib/db/supabase'
 import { LAYER_LABELS } from '@/lib/data/compass-controls'
 import { calculateSystemMaturity, type ScoredItem } from '@/lib/utils'
 import type { Layer } from '@/lib/data/compass-controls'
+import { friaRecommended } from '@/lib/data/fundamental-rights'
+import { OptInFriaButton } from './OptInFriaButton'
 
 const RISK_TIER_STYLES: Record<string, string> = {
   unacceptable: 'bg-red-500/10 border-red-500/30 text-red-400',
@@ -79,6 +81,9 @@ export default async function SystemDashboard({ params }: { params: { id: string
     { href: 'evidence', label: 'Evidence Checklist', desc: 'Maturity scoring across layers', icon: '✅', badge: null },
     { href: 'dossier', label: 'Compliance Dossier', desc: 'Export regulator-ready PDF', icon: '📋', badge: null },
   ]
+
+  const friaRequired = friaRecommended(system.sector, system.risk_tier ?? 'minimal')
+  const friaOptedIn = system.fria_opted_in as boolean
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -185,7 +190,41 @@ export default async function SystemDashboard({ params }: { params: { id: string
               )}
             </Link>
           ))}
+
+          {/* FRIA card — shown when opted in */}
+          {friaOptedIn && (
+            <Link
+              href={`/systems/${params.id}/fria`}
+              className="group p-5 bg-gray-900 border border-rose-500/30 hover:border-rose-500/60 rounded-xl transition-colors"
+            >
+              <div className="text-2xl mb-3">⚖️</div>
+              <div className="font-medium text-white group-hover:text-rose-400 transition-colors mb-1">
+                FRIA
+              </div>
+              <div className="text-xs text-gray-500 mb-2">Fundamental Rights Impact Assessment · EU AI Act Art. 27</div>
+              <span className="inline-block px-2 py-0.5 rounded-full border text-[10px] font-medium bg-rose-500/10 border-rose-500/30 text-rose-400">
+                Art. 27
+              </span>
+            </Link>
+          )}
         </div>
+
+        {/* FRIA callout — shown when recommended/required but not yet opted in */}
+        {!friaOptedIn && friaRequired && (
+          <div className="mt-6 p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 flex items-start gap-4">
+            <div className="text-amber-400 text-xl flex-shrink-0">!</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-amber-300 mb-1">
+                Fundamental Rights Impact Assessment recommended
+              </div>
+              <p className="text-xs text-gray-400">
+                EU AI Act Art. 27 requires deployers in high-risk sectors to conduct a FRIA before deployment.
+                Enable it to assess impacts across 24 EU Charter rights.
+              </p>
+            </div>
+            <OptInFriaButton systemId={params.id} />
+          </div>
+        )}
 
         {/* AI SBoM section */}
         {(system.base_model || system.vendor_name) && (

@@ -22,6 +22,35 @@ interface System {
   vendor_last_audit: string | null
   maturity_score: string | null
   created_at: string
+  fria_opted_in?: boolean
+}
+
+interface FRIAScenarioRow {
+  right_name: string
+  scenario_description: string
+  likelihood: string
+  interference_level: string
+  scope: string
+  priority_level: string
+  justification: string | null
+  absolute_right: boolean
+}
+
+interface FRIADeploymentRow {
+  recommendation: string
+  rationale: string | null
+  conditions: string | null
+  approved_by: string | null
+  approval_date: string | null
+  next_review_date: string | null
+}
+
+interface FRIAContextRow {
+  purpose_description: string | null
+  operator_name: string | null
+  assessor_name: string | null
+  assessment_date: string | null
+  affected_populations: string | null
 }
 
 interface EvidenceRow {
@@ -81,7 +110,10 @@ export function generateDossierMarkdown(
   evidence: EvidenceRow[],
   threats: ThreatRow[],
   lexarch: LexArchRow[],
-  generatedDate: string
+  generatedDate: string,
+  friaContext?: FRIAContextRow | null,
+  friaScenarios?: FRIAScenarioRow[],
+  friaDeployment?: FRIADeploymentRow | null,
 ): string {
   const classification = classifyRisk(system.purpose, system.sector)
   const layers = system.layers as string[]
@@ -232,6 +264,52 @@ export function generateDossierMarkdown(
       if (r.owasp_ref) lines.push(`- **OWASP:** ${r.owasp_ref}`)
       lines.push(``)
     })
+  }
+
+  // FRIA section (conditional)
+  if (system.fria_opted_in && (friaScenarios?.length || friaContext || friaDeployment)) {
+    const friaSectionNum = constituents.length + 8
+    lines.push(`## ${friaSectionNum}. Fundamental Rights Impact Assessment (Art. 27)`)
+    lines.push(``)
+    lines.push(`_This system has undergone a FRIA in accordance with EU AI Act Art. 27._`)
+    lines.push(``)
+
+    if (friaContext) {
+      if (friaContext.operator_name) lines.push(`**Deploying organisation:** ${friaContext.operator_name}`)
+      if (friaContext.assessor_name) lines.push(`**Assessor:** ${friaContext.assessor_name}`)
+      if (friaContext.assessment_date) lines.push(`**Assessment date:** ${friaContext.assessment_date}`)
+      if (friaContext.affected_populations) lines.push(`**Affected populations:** ${friaContext.affected_populations}`)
+      lines.push(``)
+    }
+
+    if (friaScenarios && friaScenarios.length > 0) {
+      lines.push(`### Rights Assessment`)
+      lines.push(``)
+      lines.push(`| Right | Likelihood | Interference | Scope | Priority |`)
+      lines.push(`|---|---|---|---|---|`)
+      friaScenarios.forEach(s => {
+        lines.push(`| ${s.right_name} | ${s.likelihood} | ${s.interference_level} | ${s.scope} | **${s.priority_level.toUpperCase()}** |`)
+      })
+      lines.push(``)
+
+      const critical = friaScenarios.filter(s => s.priority_level === 'critical')
+      const high = friaScenarios.filter(s => s.priority_level === 'high')
+      if (critical.length > 0) lines.push(`⚠ **${critical.length} critical risk(s) identified** requiring immediate mitigation.`)
+      if (high.length > 0) lines.push(`⚠ **${high.length} high risk(s) identified** requiring mitigation before deployment.`)
+      lines.push(``)
+    }
+
+    if (friaDeployment) {
+      lines.push(`### Deployment Decision`)
+      lines.push(``)
+      lines.push(`**Recommendation:** ${friaDeployment.recommendation?.replace(/_/g, ' ').toUpperCase() ?? '—'}`)
+      if (friaDeployment.rationale) lines.push(`**Rationale:** ${friaDeployment.rationale}`)
+      if (friaDeployment.conditions) lines.push(`**Conditions:** ${friaDeployment.conditions}`)
+      if (friaDeployment.approved_by) lines.push(`**Approved by:** ${friaDeployment.approved_by}`)
+      if (friaDeployment.approval_date) lines.push(`**Approval date:** ${friaDeployment.approval_date}`)
+      if (friaDeployment.next_review_date) lines.push(`**Next review:** ${friaDeployment.next_review_date}`)
+      lines.push(``)
+    }
   }
 
   // Compliance summary

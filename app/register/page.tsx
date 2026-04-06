@@ -54,6 +54,8 @@ const VENDOR_STATUSES = [
 
 const STEPS = ['System basics', 'Deployment & layers', 'AI SBoM', 'Vendor info']
 
+const FRIA_REQUIRED_SECTORS = ['Banking & Finance (BFSI)', 'Public Sector & Government']
+
 type FormData = {
   name: string
   purpose: string
@@ -69,6 +71,7 @@ type FormData = {
   vendor_name: string
   vendor_assessment_status: string
   vendor_last_audit: string
+  friaOptedIn: boolean
 }
 
 export default function RegisterPage() {
@@ -92,6 +95,7 @@ export default function RegisterPage() {
     vendor_name: '',
     vendor_assessment_status: '',
     vendor_last_audit: '',
+    friaOptedIn: false,
   })
 
   function set(field: keyof FormData, value: string) {
@@ -123,6 +127,7 @@ export default function RegisterPage() {
         third_party_plugins: form.third_party_plugins
           ? form.third_party_plugins.split(',').map(s => s.trim()).filter(Boolean)
           : [],
+        fria_opted_in: form.friaOptedIn,
       })
       router.push(`/systems/${id}`)
     } catch (e) {
@@ -196,6 +201,40 @@ export default function RegisterPage() {
                     {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
+
+                {/* FRIA opt-in */}
+                {form.sector && (
+                  <div className={`p-4 rounded-lg border ${
+                    FRIA_REQUIRED_SECTORS.includes(form.sector)
+                      ? 'border-rose-500/40 bg-rose-500/5'
+                      : 'border-gray-700 bg-gray-800/50'
+                  }`}>
+                    <div className="flex items-start gap-3">
+                      <input
+                        id="fria-opt-in"
+                        type="checkbox"
+                        checked={form.friaOptedIn}
+                        onChange={e => setForm(f => ({ ...f, friaOptedIn: e.target.checked }))}
+                        className="mt-0.5 accent-rose-500 w-4 h-4 flex-shrink-0"
+                      />
+                      <label htmlFor="fria-opt-in" className="cursor-pointer">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-sm font-medium text-white">Enable Fundamental Rights Impact Assessment (FRIA)</span>
+                          {FRIA_REQUIRED_SECTORS.includes(form.sector) && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                              Required — EU AI Act Art. 27
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-400">
+                          {FRIA_REQUIRED_SECTORS.includes(form.sector)
+                            ? 'Deployers in BFSI and public sector must conduct a FRIA before deployment under EU AI Act Art. 27.'
+                            : 'Recommended for high-risk systems. Assesses impact on EU Charter rights across 24 fundamental rights.'}
+                        </p>
+                      </label>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

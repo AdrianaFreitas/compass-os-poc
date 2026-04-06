@@ -19,6 +19,7 @@ export interface RegisterSystemInput {
   vendor_name: string
   vendor_assessment_status: string
   vendor_last_audit: string
+  fria_opted_in?: boolean
 }
 
 export async function registerSystem(input: RegisterSystemInput): Promise<string> {
@@ -44,6 +45,7 @@ export async function registerSystem(input: RegisterSystemInput): Promise<string
       vendor_assessment_status: input.vendor_assessment_status || null,
       vendor_last_audit: input.vendor_last_audit || null,
       maturity_score: 'ml1',
+      fria_opted_in: input.fria_opted_in ?? false,
     })
     .select('id')
     .single()
