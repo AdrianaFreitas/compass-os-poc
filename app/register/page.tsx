@@ -46,7 +46,8 @@ const LAYERS = [
 const VENDOR_STATUSES = [
   'Not assessed',
   'Assessment in progress',
-  'Assessment complete — satisfactory',
+  'Assessment complete — self-assessed',
+  'Assessment complete — third-party audited (SOC 2 / ISO 27001 / equivalent)',
   'Assessment complete — remediation required',
   'No vendor (internal model)',
 ]

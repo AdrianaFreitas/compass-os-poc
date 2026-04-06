@@ -18,6 +18,13 @@ create table systems (
   orchestration_framework text,
   third_party_plugins text[],
   vendor_name text,
+  -- vendor_assessment_status values:
+  -- 'Not assessed'
+  -- 'Assessment in progress'
+  -- 'Assessment complete — self-assessed'
+  -- 'Assessment complete — third-party audited (SOC 2 / ISO 27001 / equivalent)'
+  -- 'Assessment complete — remediation required'
+  -- 'No vendor (internal model)'
   vendor_assessment_status text,
   vendor_last_audit date,
   maturity_score text default 'ml1'

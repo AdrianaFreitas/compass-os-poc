@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/db/supabase'
 import { LAYER_LABELS } from '@/lib/data/compass-controls'
+import { calculateSystemMaturity, type ScoredItem } from '@/lib/utils'
+import type { Layer } from '@/lib/data/compass-controls'
 
 const RISK_TIER_STYLES: Record<string, string> = {
   unacceptable: 'bg-red-500/10 border-red-500/30 text-red-400',
@@ -10,19 +12,17 @@ const RISK_TIER_STYLES: Record<string, string> = {
   minimal: 'bg-green-500/10 border-green-500/30 text-green-400',
 }
 
-const MATURITY_STYLES: Record<string, string> = {
-  ml1: 'bg-gray-500/10 border-gray-500/30 text-gray-400',
-  ml2: 'bg-blue-500/10 border-blue-500/30 text-blue-400',
-  ml3: 'bg-green-500/10 border-green-500/30 text-green-400',
+const MATURITY_STYLES: Record<string, { badge: string; label: string }> = {
+  ml1: { badge: 'bg-red-500/10 border-red-500/30 text-red-400', label: 'ML-1 Initial' },
+  ml2: { badge: 'bg-amber-500/10 border-amber-500/30 text-amber-400', label: 'ML-2 Managed' },
+  ml3: { badge: 'bg-green-500/10 border-green-500/30 text-green-400', label: 'ML-3 Defined' },
 }
 
-const MODULES = [
-  { href: 'classify', label: 'Risk Classification', desc: 'EU AI Act tier + OWASP threat model', icon: '⚖️' },
-  { href: 'matrix', label: 'Jurisdiction Matrix', desc: 'EU · US · CN control overlap', icon: '🗺️' },
-  { href: 'lexarch', label: 'LexArch Compiler', desc: 'Map regulatory articles to controls', icon: '📜' },
-  { href: 'evidence', label: 'Evidence Checklist', desc: 'Maturity scoring across layers', icon: '✅' },
-  { href: 'dossier', label: 'Compliance Dossier', desc: 'Export regulator-ready PDF', icon: '📋' },
-]
+const JURISDICTION_STYLES: Record<string, string> = {
+  eu: 'bg-blue-500/10 border-blue-500/30 text-blue-400',
+  us: 'bg-teal-500/10 border-teal-500/30 text-teal-400',
+  cn: 'bg-amber-500/10 border-amber-500/30 text-amber-400',
+}
 
 export default async function SystemDashboard({ params }: { params: { id: string } }) {
   const { data: system } = await supabase
@@ -33,17 +33,52 @@ export default async function SystemDashboard({ params }: { params: { id: string
 
   if (!system) notFound()
 
-  const { data: evidenceRows } = await supabase
-    .from('evidence')
-    .select('checked, constituent, layer')
-    .eq('system_id', params.id)
+  const [evidenceRes, threatRes] = await Promise.all([
+    supabase
+      .from('evidence')
+      .select('checked, constituent, layer, evidence_type, retest_frequency, last_tested')
+      .eq('system_id', params.id),
+    supabase
+      .from('threat_model')
+      .select('id')
+      .eq('system_id', params.id),
+  ])
 
-  const total = evidenceRows?.length ?? 0
-  const checked = evidenceRows?.filter(e => e.checked).length ?? 0
+  const evidenceRows = evidenceRes.data ?? []
+  const threatCount = threatRes.data?.length ?? 0
+
+  const total = evidenceRows.length
+  const checked = evidenceRows.filter(e => e.checked).length
   const progress = total > 0 ? Math.round((checked / total) * 100) : 0
 
+  // Live maturity computed from evidence (Change 4)
+  const liveMaturity = calculateSystemMaturity(evidenceRows as ScoredItem[], system.layers as Layer[])
+  const maturityConfig = MATURITY_STYLES[liveMaturity]
+
   const riskStyle = RISK_TIER_STYLES[system.risk_tier ?? 'minimal']
-  const maturityStyle = MATURITY_STYLES[system.maturity_score ?? 'ml1']
+  const jurisdictions = (system.jurisdictions as string[]) ?? []
+
+  // Threat model badge (Change 3)
+  const threatBadge =
+    threatCount === 0
+      ? { label: 'Threat model pending', style: 'bg-amber-500/10 border-amber-500/30 text-amber-400' }
+      : threatCount >= 7
+      ? { label: 'Threat model complete', style: 'bg-green-500/10 border-green-500/30 text-green-400' }
+      : { label: `${threatCount}/7 answered`, style: 'bg-amber-500/10 border-amber-500/30 text-amber-400' }
+
+  const MODULES = [
+    {
+      href: 'classify',
+      label: 'Risk Classification',
+      desc: 'EU AI Act tier + OWASP threat model',
+      icon: '⚖️',
+      badge: threatBadge,
+    },
+    { href: 'matrix', label: 'Jurisdiction Matrix', desc: 'EU · US · CN control overlap', icon: '🗺️', badge: null },
+    { href: 'lexarch', label: 'LexArch Compiler', desc: 'Map regulatory articles to controls', icon: '📜', badge: null },
+    { href: 'evidence', label: 'Evidence Checklist', desc: 'Maturity scoring across layers', icon: '✅', badge: null },
+    { href: 'dossier', label: 'Compliance Dossier', desc: 'Export regulator-ready PDF', icon: '📋', badge: null },
+  ]
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -60,12 +95,26 @@ export default async function SystemDashboard({ params }: { params: { id: string
         <div className="mb-8">
           <div className="flex flex-wrap items-start gap-3 mb-2">
             <h1 className="text-2xl font-bold text-white">{system.name}</h1>
+
+            {/* EU AI Act risk tier */}
             <span className={`px-2.5 py-0.5 rounded-full border text-xs font-medium ${riskStyle}`}>
               {system.risk_tier?.replace('_', ' ').toUpperCase() ?? 'UNCLASSIFIED'} · {system.risk_article}
             </span>
-            <span className={`px-2.5 py-0.5 rounded-full border text-xs font-medium ${maturityStyle}`}>
-              {(system.maturity_score ?? 'ml1').toUpperCase()}
+
+            {/* Live maturity badge (Change 4) */}
+            <span className={`px-2.5 py-0.5 rounded-full border text-xs font-medium ${maturityConfig.badge}`}>
+              {maturityConfig.label}
             </span>
+
+            {/* Jurisdiction badges (Change 2) */}
+            {jurisdictions.map(j => (
+              <span
+                key={j}
+                className={`px-2.5 py-0.5 rounded-full border text-xs font-medium ${JURISDICTION_STYLES[j] ?? 'bg-gray-500/10 border-gray-500/30 text-gray-400'}`}
+              >
+                {j.toUpperCase()}
+              </span>
+            ))}
           </div>
           <p className="text-gray-400 text-sm max-w-2xl">{system.purpose}</p>
         </div>
@@ -77,7 +126,7 @@ export default async function SystemDashboard({ params }: { params: { id: string
             { label: 'Deployment', value: system.deployment_type?.toUpperCase() },
             {
               label: 'Jurisdictions',
-              value: (system.jurisdictions as string[])?.map(j => j.toUpperCase()).join(' · ')
+              value: jurisdictions.map(j => j.toUpperCase()).join(' · '),
             },
             { label: 'Evidence', value: `${checked} / ${total} checked (${progress}%)` },
           ].map(({ label, value }) => (
@@ -128,7 +177,12 @@ export default async function SystemDashboard({ params }: { params: { id: string
               <div className="font-medium text-white group-hover:text-indigo-400 transition-colors mb-1">
                 {m.label}
               </div>
-              <div className="text-xs text-gray-500">{m.desc}</div>
+              <div className="text-xs text-gray-500 mb-2">{m.desc}</div>
+              {m.badge && (
+                <span className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-medium ${m.badge.style}`}>
+                  {m.badge.label}
+                </span>
+              )}
             </Link>
           ))}
         </div>
@@ -144,7 +198,7 @@ export default async function SystemDashboard({ params }: { params: { id: string
                 { label: 'Vector DB', value: system.vector_db },
                 { label: 'Orchestration', value: system.orchestration_framework },
                 { label: 'Vendor', value: system.vendor_name },
-                { label: 'Vendor status', value: system.vendor_assessment_status },
+                { label: 'Vendor assessment', value: system.vendor_assessment_status },
               ].filter(({ value }) => value).map(({ label, value }) => (
                 <div key={label}>
                   <div className="text-xs text-gray-500 mb-0.5">{label}</div>
