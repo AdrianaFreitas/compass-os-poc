@@ -168,3 +168,93 @@ export async function deleteStakeholder(stakeholderId: string): Promise<void> {
     .eq('id', stakeholderId)
   if (error) throw new Error(error.message)
 }
+
+export async function saveScenarioGroup(
+  systemId: string,
+  base: {
+    scenario_description: string
+    likelihood: string
+    interference_level: string
+    scope: string
+    justification: string
+    priority_level: string
+  },
+  rights: { rightId: string; rightName: string; absoluteRight: boolean }[],
+  mitigationDrafts: { mitigation_type: string; description: string; owner: string; status: string }[],
+): Promise<{ scenarios: FRIAScenario[]; newMitigations: FRIAMitigation[] }> {
+  // Get next scenario_number for this system
+  const { data: maxRow } = await supabase
+    .from('fria_scenarios')
+    .select('scenario_number')
+    .eq('system_id', systemId)
+    .not('scenario_number', 'is', null)
+    .order('scenario_number', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const scenarioNumber = (maxRow?.scenario_number ?? 0) + 1
+
+  const rows = rights.map(r => ({
+    system_id: systemId,
+    right_id: r.rightId,
+    right_name: r.rightName,
+    absolute_right: r.absoluteRight,
+    scenario_description: base.scenario_description,
+    likelihood: base.likelihood,
+    interference_level: base.interference_level,
+    scope: base.scope,
+    priority_level: base.priority_level,
+    justification: base.justification,
+    scenario_number: scenarioNumber,
+  }))
+
+  const { data: inserted, error } = await supabase
+    .from('fria_scenarios')
+    .insert(rows)
+    .select('*')
+
+  if (error || !inserted?.length) throw new Error(error?.message ?? 'Failed to save scenario group')
+
+  let newMitigations: FRIAMitigation[] = []
+  const validDrafts = mitigationDrafts.filter(m => m.description.trim())
+  if (validDrafts.length > 0) {
+    const firstId = inserted[0].id
+    const mitRows = validDrafts.map(m => ({
+      system_id: systemId,
+      scenario_id: firstId,
+      mitigation_type: m.mitigation_type,
+      description: m.description,
+      owner: m.owner,
+      status: m.status,
+    }))
+    const { data: mitInserted, error: mitError } = await supabase
+      .from('fria_mitigations')
+      .insert(mitRows)
+      .select('*')
+    if (mitError) throw new Error(mitError.message)
+    newMitigations = (mitInserted ?? []) as FRIAMitigation[]
+  }
+
+  return { scenarios: inserted as FRIAScenario[], newMitigations }
+}
+
+export async function deleteScenarioGroup(
+  systemId: string,
+  scenarioNumber: number | null,
+  fallbackId: string,
+): Promise<void> {
+  if (scenarioNumber != null) {
+    const { error } = await supabase
+      .from('fria_scenarios')
+      .delete()
+      .eq('system_id', systemId)
+      .eq('scenario_number', scenarioNumber)
+    if (error) throw new Error(error.message)
+  } else {
+    const { error } = await supabase
+      .from('fria_scenarios')
+      .delete()
+      .eq('id', fallbackId)
+    if (error) throw new Error(error.message)
+  }
+}

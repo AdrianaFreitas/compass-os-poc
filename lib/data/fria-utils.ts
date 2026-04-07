@@ -154,6 +154,7 @@ export interface FRIAScenario {
   priority_level: string
   justification: string
   absolute_right: boolean
+  scenario_number?: number | null
 }
 
 export interface FRIAMitigation {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import { FUNDAMENTAL_RIGHTS } from '@/lib/data/fundamental-rights'
 import {
   LIKELIHOOD_OPTIONS,
@@ -12,6 +12,7 @@ import {
   DEPLOYMENT_RECOMMENDATIONS,
   calculateFRIAPriority,
   RISK_LEVEL_STYLES,
+  type RiskLevel,
   type FRIAContext,
   type FRIAScenario,
   type FRIAMitigation,
@@ -20,8 +21,8 @@ import {
 } from '@/lib/data/fria-utils'
 import {
   saveContext,
-  saveScenario,
-  deleteScenario,
+  saveScenarioGroup,
+  deleteScenarioGroup,
   saveMitigation,
   deleteMitigation,
   saveDeployment,
@@ -40,12 +41,31 @@ interface Props {
   initialStakeholders: FRIAStakeholder[]
 }
 
+interface DraftRight {
+  rightId: string
+}
+
+interface DraftMitigation {
+  mitigation_type: string
+  description: string
+  owner: string
+  status: string
+}
+
 const TAB_LABELS: { id: Tab; label: string; phase: string }[] = [
   { id: 'context', label: 'Phase 1 — Context', phase: 'Who, what, where' },
   { id: 'scenarios', label: 'Phase 2 — Impact', phase: 'Rights & scenarios' },
   { id: 'deployment', label: 'Phase 3 — Decision', phase: 'Deployment recommendation' },
   { id: 'stakeholders', label: 'Phase 5 — Stakeholders', phase: 'Consultation record' },
 ]
+
+function getGroupPriority(group: FRIAScenario[]): RiskLevel {
+  const order: RiskLevel[] = ['low', 'medium', 'high', 'critical']
+  return group.reduce<RiskLevel>((max, s) => {
+    const p = calculateFRIAPriority(s.likelihood, s.interference_level)
+    return order.indexOf(p) > order.indexOf(max) ? p : max
+  }, 'low')
+}
 
 export function FriaClient({
   systemId,
@@ -89,65 +109,88 @@ export function FriaClient({
     })
   }
 
-  // ─── Scenario management ─────────────────────────────────────────────────────
+  // ─── Scenario groups ─────────────────────────────────────────────────────────
+
+  const scenarioGroups = useMemo(() => {
+    const groups = new Map<string, FRIAScenario[]>()
+    for (const s of scenarios) {
+      const key = s.scenario_number != null ? `sn-${s.scenario_number}` : `id-${s.id}`
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(s)
+    }
+    return Array.from(groups.values())
+  }, [scenarios])
+
+  // ─── New scenario form state ──────────────────────────────────────────────────
 
   const [showScenarioForm, setShowScenarioForm] = useState(false)
-  const [editingScenario, setEditingScenario] = useState<Partial<FRIAScenario> | null>(null)
-  const [selectedRightId, setSelectedRightId] = useState('')
-  const [showMitigationForm, setShowMitigationForm] = useState<string | null>(null) // scenarioId
-  const [editingMitigation, setEditingMitigation] = useState<Partial<FRIAMitigation> | null>(null)
+  const [formDesc, setFormDesc] = useState('')
+  const [formLikelihood, setFormLikelihood] = useState('possible')
+  const [formInterference, setFormInterference] = useState('minor')
+  const [formScope, setFormScope] = useState('individual')
+  const [formJustification, setFormJustification] = useState('')
+  const [formRights, setFormRights] = useState<DraftRight[]>([{ rightId: '' }])
+  const [formMits, setFormMits] = useState<DraftMitigation[]>([])
 
   function openNewScenario() {
-    setEditingScenario({
-      system_id: systemId,
-      likelihood: 'possible',
-      interference_level: 'minor',
-      scope: 'individual',
-      absolute_right: false,
-    })
-    setSelectedRightId('')
+    setFormDesc('')
+    setFormLikelihood('possible')
+    setFormInterference('minor')
+    setFormScope('individual')
+    setFormJustification('')
+    setFormRights([{ rightId: '' }])
+    setFormMits([])
     setShowScenarioForm(true)
   }
 
-  function openEditScenario(s: FRIAScenario) {
-    setEditingScenario({ ...s })
-    setSelectedRightId(s.right_id)
-    setShowScenarioForm(true)
+  function addFormRight() {
+    if (formRights.length >= 5) return
+    setFormRights(r => [...r, { rightId: '' }])
   }
 
-  function handleRightSelect(rightId: string) {
-    const right = FUNDAMENTAL_RIGHTS.find(r => r.id === rightId)
-    if (!right) return
-    setSelectedRightId(rightId)
-    setEditingScenario(prev => ({
-      ...prev,
-      right_id: right.id,
-      right_name: `${right.article} — ${right.name}`,
-      absolute_right: right.absolute,
-    }))
+  function removeFormRight(idx: number) {
+    setFormRights(r => r.filter((_, i) => i !== idx))
+  }
+
+  function setFormRight(idx: number, rightId: string) {
+    setFormRights(r => r.map((row, i) => i === idx ? { rightId } : row))
+  }
+
+  function addFormMit() {
+    setFormMits(m => [...m, { mitigation_type: 'technical', description: '', owner: '', status: 'planned' }])
+  }
+
+  function removeFormMit(idx: number) {
+    setFormMits(m => m.filter((_, i) => i !== idx))
+  }
+
+  function updateFormMit(idx: number, key: keyof DraftMitigation, val: string) {
+    setFormMits(m => m.map((row, i) => i === idx ? { ...row, [key]: val } : row))
   }
 
   function submitScenario() {
-    if (!editingScenario?.right_id || !editingScenario.scenario_description) return
-    const priority = calculateFRIAPriority(
-      editingScenario.likelihood ?? 'possible',
-      editingScenario.interference_level ?? 'minor',
-    )
-    const scenarioData: FRIAScenario = {
-      ...editingScenario,
-      priority_level: priority,
-    } as FRIAScenario
+    const validRights = formRights.filter(r => r.rightId)
+    if (!formDesc.trim() || validRights.length === 0) return
+
+    const priority = calculateFRIAPriority(formLikelihood, formInterference)
+    const rights = validRights.map(r => {
+      const right = FUNDAMENTAL_RIGHTS.find(fr => fr.id === r.rightId)!
+      return { rightId: right.id, rightName: `${right.article} — ${right.name}`, absoluteRight: right.absolute }
+    })
 
     startTransition(async () => {
       try {
-        const id = await saveScenario(scenarioData)
-        setScenarios(prev => {
-          const existing = prev.find(s => s.id === id)
-          if (existing) return prev.map(s => s.id === id ? { ...scenarioData, id } : s)
-          return [...prev, { ...scenarioData, id }]
-        })
+        const result = await saveScenarioGroup(
+          systemId,
+          { scenario_description: formDesc, likelihood: formLikelihood, interference_level: formInterference, scope: formScope, justification: formJustification, priority_level: priority },
+          rights,
+          formMits,
+        )
+        setScenarios(prev => [...prev, ...result.scenarios])
+        if (result.newMitigations.length > 0) {
+          setMitigations(prev => [...prev, ...result.newMitigations])
+        }
         setShowScenarioForm(false)
-        setEditingScenario(null)
         flash('Scenario saved')
       } catch (e) {
         handleError(e)
@@ -155,12 +198,16 @@ export function FriaClient({
     })
   }
 
-  function handleDeleteScenario(scenarioId: string) {
+  function handleDeleteGroup(group: FRIAScenario[]) {
+    const first = group[0]
+    const scenarioNumber = first.scenario_number ?? null
+    const allIds = group.map(s => s.id!)
+
     startTransition(async () => {
       try {
-        await deleteScenario(scenarioId)
-        setScenarios(prev => prev.filter(s => s.id !== scenarioId))
-        setMitigations(prev => prev.filter(m => m.scenario_id !== scenarioId))
+        await deleteScenarioGroup(systemId, scenarioNumber, first.id!)
+        setScenarios(prev => prev.filter(s => !allIds.includes(s.id!)))
+        setMitigations(prev => prev.filter(m => !allIds.includes(m.scenario_id)))
         flash('Scenario deleted')
       } catch (e) {
         handleError(e)
@@ -168,13 +215,13 @@ export function FriaClient({
     })
   }
 
+  // ─── Existing mitigation add (on saved scenario cards) ────────────────────────
+
+  const [showMitigationForm, setShowMitigationForm] = useState<string | null>(null)
+  const [editingMitigation, setEditingMitigation] = useState<Partial<FRIAMitigation> | null>(null)
+
   function openNewMitigation(scenarioId: string) {
-    setEditingMitigation({
-      system_id: systemId,
-      scenario_id: scenarioId,
-      mitigation_type: 'technical',
-      status: 'planned',
-    })
+    setEditingMitigation({ system_id: systemId, scenario_id: scenarioId, mitigation_type: 'technical', status: 'planned' })
     setShowMitigationForm(scenarioId)
   }
 
@@ -265,8 +312,8 @@ export function FriaClient({
 
   // ─── Render helpers ───────────────────────────────────────────────────────────
 
-  const criticalCount = scenarios.filter(s => s.priority_level === 'critical').length
-  const highCount = scenarios.filter(s => s.priority_level === 'high').length
+  const criticalCount = scenarioGroups.filter(g => getGroupPriority(g) === 'critical').length
+  const highCount = scenarioGroups.filter(g => getGroupPriority(g) === 'high').length
 
   return (
     <div>
@@ -285,7 +332,7 @@ export function FriaClient({
       {/* Summary strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
         {[
-          { label: 'Rights assessed', value: scenarios.length.toString() },
+          { label: 'Scenarios', value: scenarioGroups.length.toString() },
           { label: 'Critical risks', value: criticalCount.toString() },
           { label: 'High risks', value: highCount.toString() },
           { label: 'Mitigations', value: mitigations.length.toString() },
@@ -390,12 +437,14 @@ export function FriaClient({
               <h2 className="text-base font-semibold text-white">Phase 2 — Impact Assessment</h2>
               <p className="text-xs text-gray-500 mt-0.5">Map rights to interference scenarios and add mitigations.</p>
             </div>
-            <button
-              onClick={openNewScenario}
-              className="px-3 py-1.5 bg-rose-600/80 hover:bg-rose-600 text-white text-sm rounded-lg transition-colors"
-            >
-              + Add scenario
-            </button>
+            {!showScenarioForm && (
+              <button
+                onClick={openNewScenario}
+                className="px-3 py-1.5 bg-rose-600/80 hover:bg-rose-600 text-white text-sm rounded-lg transition-colors"
+              >
+                + Add scenario
+              </button>
+            )}
           </div>
 
           {/* Risk matrix legend */}
@@ -415,7 +464,7 @@ export function FriaClient({
                   return (
                     <div
                       key={likelihood}
-                      className={`text-center py-1 rounded text-[10px] font-medium ${RISK_LEVEL_STYLES[level]}`}
+                      className={`text-center py-1 rounded text-[10px] font-medium ${RISK_LEVEL_STYLES[level as RiskLevel]}`}
                     >
                       {level}
                     </div>
@@ -425,58 +474,92 @@ export function FriaClient({
             ))}
           </div>
 
-          {/* Add/Edit scenario form */}
-          {showScenarioForm && editingScenario && (
-            <div className="p-5 bg-gray-900 border border-rose-500/30 rounded-xl space-y-4">
-              <h3 className="text-sm font-medium text-white">{editingScenario.id ? 'Edit scenario' : 'New scenario'}</h3>
+          {/* New scenario form */}
+          {showScenarioForm && (
+            <div className="p-5 bg-gray-900 border border-rose-500/30 rounded-xl space-y-5">
+              <h3 className="text-sm font-medium text-white">New impact scenario</h3>
 
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Fundamental right <span className="text-red-400">*</span></label>
-                <select
-                  value={selectedRightId}
-                  onChange={e => handleRightSelect(e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-rose-500"
-                >
-                  <option value="">Select right...</option>
-                  {['dignity', 'freedoms', 'equality', 'solidarity', 'citizens', 'justice'].map(cat => (
-                    <optgroup key={cat} label={cat.charAt(0).toUpperCase() + cat.slice(1)}>
-                      {FUNDAMENTAL_RIGHTS.filter(r => r.category === cat).map(r => (
-                        <option key={r.id} value={r.id}>{r.article} — {r.name}</option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-                {selectedRightId && (() => {
-                  const right = FUNDAMENTAL_RIGHTS.find(r => r.id === selectedRightId)
-                  if (!right) return null
+              {/* Multi-right selector */}
+              <div className="space-y-2">
+                <label className="block text-xs text-gray-400">
+                  Fundamental right(s) <span className="text-red-400">*</span>
+                  <span className="ml-2 text-gray-600 font-normal">up to 5</span>
+                </label>
+                <p className="text-[10px] text-gray-600">
+                  Commonly assessed together: Art. 7 + Art. 8 &nbsp;·&nbsp; Art. 20 + Art. 21 &nbsp;·&nbsp; Art. 41 + Art. 47
+                </p>
+                {formRights.map((row, idx) => {
+                  const right = FUNDAMENTAL_RIGHTS.find(r => r.id === row.rightId)
                   return (
-                    <p className="mt-1 text-xs text-gray-500">{right.aiRelevance}</p>
+                    <div key={idx} className="space-y-1">
+                      <div className="flex gap-2 items-center">
+                        <select
+                          value={row.rightId}
+                          onChange={e => setFormRight(idx, e.target.value)}
+                          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-rose-500"
+                        >
+                          <option value="">Select right...</option>
+                          {['dignity', 'freedoms', 'equality', 'solidarity', 'citizens', 'justice'].map(cat => (
+                            <optgroup key={cat} label={cat.charAt(0).toUpperCase() + cat.slice(1)}>
+                              {FUNDAMENTAL_RIGHTS.filter(r => r.category === cat).map(r => (
+                                <option key={r.id} value={r.id}>{r.article} — {r.name}</option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                        {formRights.length > 1 && (
+                          <button
+                            onClick={() => removeFormRight(idx)}
+                            className="text-gray-600 hover:text-red-400 text-sm px-1"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                      {right && (
+                        <div className="flex gap-2 items-center pl-1">
+                          {right.absolute && (
+                            <span className="px-1.5 py-0.5 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-[10px]">
+                              Absolute right — any violation is impermissible
+                            </span>
+                          )}
+                          <span className="text-[10px] text-gray-500">{right.aiRelevance}</span>
+                        </div>
+                      )}
+                    </div>
                   )
-                })()}
-                {editingScenario.absolute_right && (
-                  <div className="mt-1 px-2 py-1 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
-                    Absolute right — any violation is impermissible
-                  </div>
+                })}
+                {formRights.length < 5 && (
+                  <button
+                    onClick={addFormRight}
+                    className="text-xs text-rose-400 hover:text-rose-300 transition-colors"
+                  >
+                    + Add another right
+                  </button>
                 )}
               </div>
 
+              {/* Scenario description */}
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Scenario description <span className="text-red-400">*</span></label>
+                <label className="block text-xs text-gray-400 mb-1">
+                  Scenario description <span className="text-red-400">*</span>
+                </label>
                 <textarea
                   rows={3}
-                  value={editingScenario.scenario_description ?? ''}
-                  onChange={e => setEditingScenario(s => ({ ...s, scenario_description: e.target.value }))}
-                  placeholder="Describe how the AI system could interfere with this right"
+                  value={formDesc}
+                  onChange={e => setFormDesc(e.target.value)}
+                  placeholder="Describe how the AI system could interfere with these rights"
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-rose-500 resize-none"
                 />
               </div>
 
+              {/* Assessment fields */}
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Likelihood</label>
                   <select
-                    value={editingScenario.likelihood ?? 'possible'}
-                    onChange={e => setEditingScenario(s => ({ ...s, likelihood: e.target.value }))}
+                    value={formLikelihood}
+                    onChange={e => setFormLikelihood(e.target.value)}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-rose-500"
                   >
                     {LIKELIHOOD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -485,8 +568,8 @@ export function FriaClient({
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Interference level</label>
                   <select
-                    value={editingScenario.interference_level ?? 'minor'}
-                    onChange={e => setEditingScenario(s => ({ ...s, interference_level: e.target.value }))}
+                    value={formInterference}
+                    onChange={e => setFormInterference(e.target.value)}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-rose-500"
                   >
                     {INTERFERENCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -495,8 +578,8 @@ export function FriaClient({
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Scope</label>
                   <select
-                    value={editingScenario.scope ?? 'individual'}
-                    onChange={e => setEditingScenario(s => ({ ...s, scope: e.target.value }))}
+                    value={formScope}
+                    onChange={e => setFormScope(e.target.value)}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-rose-500"
                   >
                     {SCOPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -504,81 +587,162 @@ export function FriaClient({
                 </div>
               </div>
 
-              {editingScenario.likelihood && editingScenario.interference_level && (
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="text-gray-500">Computed priority:</span>
-                  <span className={`px-2 py-0.5 rounded-full border text-xs font-medium ${
-                    RISK_LEVEL_STYLES[calculateFRIAPriority(editingScenario.likelihood, editingScenario.interference_level)]
-                  }`}>
-                    {calculateFRIAPriority(editingScenario.likelihood, editingScenario.interference_level).toUpperCase()}
-                  </span>
-                </div>
-              )}
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-gray-500">Computed priority:</span>
+                <span className={`px-2 py-0.5 rounded-full border text-xs font-medium ${
+                  RISK_LEVEL_STYLES[calculateFRIAPriority(formLikelihood, formInterference)]
+                }`}>
+                  {calculateFRIAPriority(formLikelihood, formInterference).toUpperCase()}
+                </span>
+              </div>
 
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Justification / evidence</label>
                 <textarea
                   rows={2}
-                  value={editingScenario.justification ?? ''}
-                  onChange={e => setEditingScenario(s => ({ ...s, justification: e.target.value }))}
+                  value={formJustification}
+                  onChange={e => setFormJustification(e.target.value)}
                   placeholder="Why is this interference level justified or unjustified?"
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-rose-500 resize-none"
                 />
               </div>
 
+              {/* Inline mitigation measures */}
+              <div className="border-t border-gray-800 pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-xs font-medium text-gray-400">Mitigation measures</label>
+                  <button
+                    onClick={addFormMit}
+                    className="text-xs text-rose-400 hover:text-rose-300 transition-colors"
+                  >
+                    + Add mitigation
+                  </button>
+                </div>
+
+                {formMits.length === 0 && (
+                  <p className="text-xs text-gray-600">No mitigations added yet — you can add them now or after saving.</p>
+                )}
+
+                {formMits.map((m, idx) => (
+                  <div key={idx} className="mb-3 p-3 bg-gray-800/50 rounded-lg space-y-2">
+                    <div className="flex gap-2">
+                      <select
+                        value={m.mitigation_type}
+                        onChange={e => updateFormMit(idx, 'mitigation_type', e.target.value)}
+                        className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-xs focus:outline-none flex-shrink-0"
+                      >
+                        {MITIGATION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                      </select>
+                      <select
+                        value={m.status}
+                        onChange={e => updateFormMit(idx, 'status', e.target.value)}
+                        className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-xs focus:outline-none flex-shrink-0"
+                      >
+                        {MITIGATION_STATUS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                      </select>
+                      <button
+                        onClick={() => removeFormMit(idx)}
+                        className="ml-auto text-gray-600 hover:text-red-400 text-sm"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      value={m.description}
+                      onChange={e => updateFormMit(idx, 'description', e.target.value)}
+                      placeholder="Describe the mitigation measure"
+                      className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-xs focus:outline-none"
+                    />
+                    <input
+                      type="text"
+                      value={m.owner}
+                      onChange={e => updateFormMit(idx, 'owner', e.target.value)}
+                      placeholder="Owner (team or role)"
+                      className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-xs focus:outline-none"
+                    />
+                  </div>
+                ))}
+              </div>
+
               <div className="flex gap-2">
-                <button onClick={submitScenario} className="px-4 py-2 bg-rose-600/80 hover:bg-rose-600 text-white text-sm rounded-lg transition-colors">
+                <button
+                  onClick={submitScenario}
+                  disabled={!formDesc.trim() || formRights.every(r => !r.rightId)}
+                  className="px-4 py-2 bg-rose-600/80 hover:bg-rose-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm rounded-lg transition-colors"
+                >
                   Save scenario
                 </button>
-                <button onClick={() => { setShowScenarioForm(false); setEditingScenario(null) }} className="px-4 py-2 text-gray-400 hover:text-white text-sm transition-colors">
+                <button
+                  onClick={() => setShowScenarioForm(false)}
+                  className="px-4 py-2 text-gray-400 hover:text-white text-sm transition-colors"
+                >
                   Cancel
                 </button>
               </div>
             </div>
           )}
 
-          {/* Scenario list */}
-          {scenarios.length === 0 && !showScenarioForm && (
+          {/* Empty state */}
+          {scenarioGroups.length === 0 && !showScenarioForm && (
             <div className="text-center py-12 text-gray-500 text-sm">
               No scenarios yet — click &quot;Add scenario&quot; to assess a right
             </div>
           )}
 
-          {scenarios.map(scenario => {
-            const scenarioMitigations = mitigations.filter(m => m.scenario_id === scenario.id)
-            const right = FUNDAMENTAL_RIGHTS.find(r => r.id === scenario.right_id)
+          {/* Scenario group cards */}
+          {scenarioGroups.map(group => {
+            const groupPriority = getGroupPriority(group)
+            const first = group[0]
+            const groupMitigations = mitigations.filter(m => group.some(s => s.id === m.scenario_id))
+
             return (
-              <div key={scenario.id} className={`bg-gray-900 border rounded-xl p-5 ${
-                scenario.priority_level === 'critical' ? 'border-red-500/30' :
-                scenario.priority_level === 'high' ? 'border-orange-500/30' :
-                'border-gray-800'
-              }`}>
+              <div
+                key={first.scenario_number != null ? `sn-${first.scenario_number}` : `id-${first.id}`}
+                className={`bg-gray-900 border rounded-xl p-5 ${
+                  groupPriority === 'critical' ? 'border-red-500/30' :
+                  groupPriority === 'high' ? 'border-orange-500/30' :
+                  'border-gray-800'
+                }`}
+              >
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="text-sm font-medium text-white">{scenario.right_name}</span>
-                      <span className={`px-2 py-0.5 rounded-full border text-[10px] font-medium ${RISK_LEVEL_STYLES[scenario.priority_level as keyof typeof RISK_LEVEL_STYLES]}`}>
-                        {scenario.priority_level?.toUpperCase()}
-                      </span>
-                      {scenario.absolute_right && (
-                        <span className="px-2 py-0.5 rounded-full border text-[10px] font-medium bg-red-500/10 border-red-500/30 text-red-400">
-                          ABSOLUTE
-                        </span>
-                      )}
-                      <span className="text-xs text-gray-500">{scenario.scope} · {scenario.likelihood} · {scenario.interference_level}</span>
+                    {/* Rights in this group */}
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {group.map(s => (
+                        <div key={s.id} className="flex items-center gap-1.5">
+                          <span className="text-sm font-medium text-white">{s.right_name}</span>
+                          {s.absolute_right && (
+                            <span className="px-1.5 py-0.5 rounded bg-red-500/10 border border-red-500/30 text-[10px] text-red-400">ABSOLUTE</span>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                    <p className="text-xs text-gray-400">{scenario.scenario_description}</p>
-                    {right && <p className="text-xs text-gray-600 mt-1">{right.aiRelevance}</p>}
+                    {/* Shared metadata */}
+                    <div className="flex items-center gap-2 flex-wrap mb-2">
+                      <span className={`px-2 py-0.5 rounded-full border text-[10px] font-medium ${RISK_LEVEL_STYLES[groupPriority]}`}>
+                        {groupPriority.toUpperCase()}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {first.scope} · {first.likelihood} · {first.interference_level}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-400">{first.scenario_description}</p>
+                    {first.justification && (
+                      <p className="text-xs text-gray-600 mt-1 italic">{first.justification}</p>
+                    )}
                   </div>
-                  <div className="flex gap-2 flex-shrink-0">
-                    <button onClick={() => openEditScenario(scenario)} className="text-xs text-gray-500 hover:text-white transition-colors">Edit</button>
-                    <button onClick={() => handleDeleteScenario(scenario.id!)} className="text-xs text-gray-500 hover:text-red-400 transition-colors">Delete</button>
-                  </div>
+                  <button
+                    onClick={() => handleDeleteGroup(group)}
+                    className="text-xs text-gray-500 hover:text-red-400 transition-colors flex-shrink-0"
+                  >
+                    Delete
+                  </button>
                 </div>
 
-                {/* Mitigations for this scenario */}
+                {/* Mitigations for this group */}
                 <div className="pl-3 border-l border-gray-700 space-y-2">
-                  {scenarioMitigations.map(m => (
+                  {groupMitigations.map(m => (
                     <div key={m.id} className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <span className="text-xs text-gray-400">{m.mitigation_type} — </span>
@@ -590,11 +754,16 @@ export function FriaClient({
                           'bg-gray-700 text-gray-400'
                         }`}>{m.status}</span>
                       </div>
-                      <button onClick={() => handleDeleteMitigation(m.id!)} className="text-[10px] text-gray-600 hover:text-red-400 flex-shrink-0">×</button>
+                      <button
+                        onClick={() => handleDeleteMitigation(m.id!)}
+                        className="text-[10px] text-gray-600 hover:text-red-400 flex-shrink-0"
+                      >
+                        ×
+                      </button>
                     </div>
                   ))}
 
-                  {showMitigationForm === scenario.id && editingMitigation ? (
+                  {showMitigationForm === first.id && editingMitigation ? (
                     <div className="pt-2 space-y-2">
                       <div className="grid grid-cols-2 gap-2">
                         <select
@@ -627,13 +796,23 @@ export function FriaClient({
                         className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-xs focus:outline-none"
                       />
                       <div className="flex gap-2">
-                        <button onClick={submitMitigation} className="px-3 py-1 bg-rose-600/70 hover:bg-rose-600 text-white text-xs rounded transition-colors">Save</button>
-                        <button onClick={() => { setShowMitigationForm(null); setEditingMitigation(null) }} className="text-xs text-gray-500 hover:text-white transition-colors">Cancel</button>
+                        <button
+                          onClick={submitMitigation}
+                          className="px-3 py-1 bg-rose-600/70 hover:bg-rose-600 text-white text-xs rounded transition-colors"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => { setShowMitigationForm(null); setEditingMitigation(null) }}
+                          className="text-xs text-gray-500 hover:text-white transition-colors"
+                        >
+                          Cancel
+                        </button>
                       </div>
                     </div>
                   ) : (
                     <button
-                      onClick={() => openNewMitigation(scenario.id!)}
+                      onClick={() => openNewMitigation(first.id!)}
                       className="text-xs text-gray-500 hover:text-rose-400 transition-colors"
                     >
                       + Add mitigation
