@@ -1020,7 +1020,9 @@ function DossierPDFDocument({
                 const stale = isStale(item as ScoredItem)
                 return (
                   <View key={ii} style={s.evidenceItem} wrap={false}>
-                    <Text style={s.evidenceCheck}>{item.checked ? '✓' : '○'}</Text>
+                    <Text style={[s.evidenceCheck, { color: item.checked ? '#155724' : '#999999' }]}>
+                      {item.checked ? '[x]' : '[ ]'}
+                    </Text>
                     <View style={s.evidenceContent}>
                       <Text style={item.checked ? s.evidenceNameChecked : s.evidenceName}>
                         {item.label}
@@ -1107,7 +1109,7 @@ function DossierPDFDocument({
               return (
                 <View>
                   <Text style={[s.body, { color: '#155724', fontFamily: 'Helvetica-Bold', marginBottom: 4 }]}>
-                    Status: ML-3 DEFINED ✓
+                    Status: ML-3 DEFINED [x]
                   </Text>
                   <Text style={s.body}>
                     All layers have achieved ML-3 maturity. The system demonstrates documented,
