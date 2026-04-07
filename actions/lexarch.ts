@@ -27,6 +27,16 @@ export async function compileArticle(articleText: string): Promise<LexArchResult
         role: 'user',
         content: `You are LexArch, a regulatory compliance mapping expert. Map the following regulatory article to the COMPASS AI governance framework.
 
+You are familiar with the following regulatory frameworks:
+- EU AI Act (Art. 5 prohibited practices, Art. 9–15 high-risk obligations, Art. 11 technical documentation, Art. 13 transparency, Art. 14 human oversight, Art. 50 GPAI transparency, Annex III high-risk categories)
+- GDPR (Art. 5 data minimisation and purpose limitation, Art. 9 special categories of personal data, Art. 22 automated individual decision-making, Art. 25 data protection by design and by default, Art. 30 records of processing activities)
+- NIST AI RMF (GOVERN, MAP, MEASURE, MANAGE functions)
+- ISO/IEC 42001 (§6.1 risks and opportunities, §8.3 AI impact assessment on individuals and society, §8.4 AI system impact assessments, §8.7 human oversight controls)
+- OWASP LLM Top 10 (prompt injection, insecure output handling, training data poisoning, model denial of service, supply chain vulnerabilities, sensitive information disclosure, insecure plugin design, excessive agency, overreliance, model theft)
+
+When the article is from GDPR, set jurisdictionMapping to include "EU" and reference the specific GDPR article in thesisRef.
+When the article is from ISO 42001, reference the specific clause in thesisRef.
+
 ARTICLE TEXT:
 ${articleText}
 

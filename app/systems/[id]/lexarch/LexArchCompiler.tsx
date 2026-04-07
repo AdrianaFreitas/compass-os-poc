@@ -49,6 +49,24 @@ c) the data used for training and testing, including characteristics and provena
 d) the AI system design, architecture and key decisions made during development;
 e) the testing, validation and verification processes and results.`
   },
+  {
+    label: 'ISO 42001 §8.3 — AI Impact Assessment',
+    text: `ISO/IEC 42001 §8.3 — AI impact assessment on individuals and society
+
+The organisation shall establish and maintain a process to assess AI-related impacts on individuals and society arising from the AI system. This process shall include identification of potential harms and benefits to individuals and groups, assessment of the likelihood and severity of identified harms, and consideration of vulnerable groups who may be disproportionately affected.`
+  },
+  {
+    label: 'ISO 42001 §8.4 — Planned Impact Assessments',
+    text: `ISO/IEC 42001 §8.4 — AI system impact assessments
+
+The organisation shall carry out AI system impact assessments at planned intervals and when significant changes are proposed to the AI system, its deployment context, or the data used. Impact assessments shall be documented, reviewed by appropriate personnel, and used to inform decisions about the development, deployment, and decommissioning of AI systems.`
+  },
+  {
+    label: 'ISO 42001 §8.7 — Human Oversight Controls',
+    text: `ISO/IEC 42001 §8.7 — Human oversight of AI systems
+
+The organisation shall establish controls to ensure human oversight of AI systems where required by applicable law or where identified as necessary by the risk assessment. These controls shall include mechanisms for humans to monitor AI system outputs, intervene in or override AI decisions, and escalate concerns. The organisation shall document the criteria and conditions under which human oversight is applied.`
+  },
 ]
 
 export default function LexArchCompiler({ systemId, initialHistory }: Props) {
