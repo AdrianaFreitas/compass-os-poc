@@ -178,9 +178,15 @@ export async function saveScenarioGroup(
     scope: string
     justification: string
     priority_level: string
+    affected_group?: string
+    driving_factors?: string
+    scenario_label?: string
+    gravity_of_impact?: string
+    irreversibility?: string
+    power_imbalance?: string
   },
   rights: { rightId: string; rightName: string; absoluteRight: boolean }[],
-  mitigationDrafts: { mitigation_type: string; description: string; owner: string; status: string }[],
+  mitigationDrafts: { mitigation_type: string; description: string; status: string }[],
 ): Promise<{ scenarios: FRIAScenario[]; newMitigations: FRIAMitigation[] }> {
   // Get next scenario_number for this system
   const { data: maxRow } = await supabase
@@ -206,6 +212,12 @@ export async function saveScenarioGroup(
     priority_level: base.priority_level,
     justification: base.justification,
     scenario_number: scenarioNumber,
+    affected_group: base.affected_group || null,
+    driving_factors: base.driving_factors || null,
+    scenario_label: base.scenario_label || null,
+    gravity_of_impact: base.gravity_of_impact || null,
+    irreversibility: base.irreversibility || null,
+    power_imbalance: base.power_imbalance || null,
   }))
 
   const { data: inserted, error } = await supabase
@@ -224,7 +236,6 @@ export async function saveScenarioGroup(
       scenario_id: firstId,
       mitigation_type: m.mitigation_type,
       description: m.description,
-      owner: m.owner,
       status: m.status,
     }))
     const { data: mitInserted, error: mitError } = await supabase

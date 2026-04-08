@@ -35,18 +35,38 @@ export const LEVEL_OPTIONS = [
 ]
 
 export const MITIGATION_TYPES = [
+  { value: 'organisational', label: 'Organisational', description: 'Policy, process, or governance change' },
   { value: 'technical', label: 'Technical', description: 'Code, model, or infrastructure change' },
-  { value: 'procedural', label: 'Procedural', description: 'Process or policy change' },
-  { value: 'human_oversight', label: 'Human oversight', description: 'Manual review or approval step' },
-  { value: 'transparency', label: 'Transparency', description: 'Disclosure, explanation, or notice' },
-  { value: 'access_control', label: 'Access control', description: 'Restrict who can use or be affected by the system' },
+  { value: 'contractual', label: 'Contractual', description: 'Binding obligation on deployer or provider' },
 ]
 
 export const MITIGATION_STATUS = [
   { value: 'planned', label: 'Planned' },
-  { value: 'in_progress', label: 'In progress' },
   { value: 'implemented', label: 'Implemented' },
-  { value: 'verified', label: 'Verified' },
+  { value: 'monitored', label: 'Monitored' },
+]
+
+export const GRAVITY_OPTIONS = [
+  { value: 'low', label: 'Low', description: 'Limited or reversible harm' },
+  { value: 'medium', label: 'Medium', description: 'Material or moderate psychological harm' },
+  { value: 'high', label: 'High', description: 'Physical harm or severe psychological harm' },
+]
+
+export const IRREVERSIBILITY_OPTIONS = [
+  { value: 'low', label: 'Low', description: 'Easily reversed — situation can be restored' },
+  { value: 'medium', label: 'Medium', description: 'Reversible with significant effort or time' },
+  { value: 'high', label: 'High', description: 'Permanent or very difficult to reverse' },
+]
+
+export const POWER_IMBALANCE_OPTIONS = [
+  { value: 'low', label: 'Low', description: 'Roughly equal standing between parties' },
+  { value: 'medium', label: 'Medium', description: 'Noticeable power difference' },
+  { value: 'high', label: 'High', description: 'e.g. state authority vs welfare recipient, bank vs loan applicant' },
+]
+
+export const SCENARIO_LABEL_OPTIONS = [
+  { value: 'typical', label: 'Typical', description: 'Expected conditions of use' },
+  { value: 'worst_case', label: 'Worst case', description: 'Unexpected or cumulative impacts' },
 ]
 
 export const STAKEHOLDER_CATEGORIES = [
@@ -86,14 +106,7 @@ export const DEPLOYMENT_RECOMMENDATIONS = [
   },
 ]
 
-// ─── Risk matrix ──────────────────────────────────────────────────────────────
-
-const LIKELIHOOD_SCORE: Record<string, number> = {
-  remote: 1,
-  possible: 2,
-  likely: 3,
-  certain: 4,
-}
+// ─── Risk matrix — ECNL/DIHR FRIA formula ────────────────────────────────────
 
 const INTERFERENCE_SCORE: Record<string, number> = {
   none: 0,
@@ -103,19 +116,46 @@ const INTERFERENCE_SCORE: Record<string, number> = {
   absolute_violation: 4,
 }
 
+const SCOPE_SCORE: Record<string, number> = {
+  individual: 1,
+  group: 2,
+  regional: 2,
+  broad: 3,
+}
+
+const LEVEL_SCORE: Record<string, number> = {
+  low: 1,
+  medium: 2,
+  high: 3,
+}
+
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
 
-export function calculateFRIAPriority(likelihood: string, interference: string): RiskLevel {
-  const l = LIKELIHOOD_SCORE[likelihood] ?? 1
-  const i = INTERFERENCE_SCORE[interference] ?? 0
-
+/**
+ * ECNL/DIHR FRIA Guide (Dec 2025) priority formula.
+ * F = extent of interference score.
+ * additionalSum = scope + gravity + irreversibility + power imbalance scores.
+ */
+export function calculateFRIAPriority(
+  interference: string,
+  scope: string,
+  gravity: string,
+  irreversibility: string,
+  powerImbalance: string,
+): RiskLevel {
   if (interference === 'absolute_violation') return 'critical'
 
-  const score = l * i
-  if (score >= 9) return 'critical'
-  if (score >= 5) return 'high'
-  if (score >= 2) return 'medium'
-  return 'low'
+  const F = INTERFERENCE_SCORE[interference] ?? 0
+  const additionalSum =
+    (SCOPE_SCORE[scope] ?? 0) +
+    (LEVEL_SCORE[gravity] ?? 0) +
+    (LEVEL_SCORE[irreversibility] ?? 0) +
+    (LEVEL_SCORE[powerImbalance] ?? 0)
+
+  if (F === 3) return 'high'
+  if (additionalSum > 9) return 'high'
+  if (F === 1 && additionalSum >= 1 && additionalSum <= 4) return 'low'
+  return 'medium'
 }
 
 export const RISK_LEVEL_STYLES: Record<RiskLevel, string> = {
@@ -155,6 +195,13 @@ export interface FRIAScenario {
   justification: string
   absolute_right: boolean
   scenario_number?: number | null
+  // Art. 27 / ECNL template fields
+  affected_group?: string | null
+  driving_factors?: string | null
+  scenario_label?: string | null
+  gravity_of_impact?: string | null
+  irreversibility?: string | null
+  power_imbalance?: string | null
 }
 
 export interface FRIAMitigation {
