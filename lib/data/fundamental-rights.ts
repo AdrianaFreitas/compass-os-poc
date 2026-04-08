@@ -293,7 +293,11 @@ export const FUNDAMENTAL_RIGHTS: {
 export const FRIA_REQUIRED_SECTORS = ['bfsi', 'public']
 
 export function friaRecommended(sector: string, riskTier: string): boolean {
+  // Match both stored full strings ('Banking & Finance (BFSI)', 'Public Sector & Government')
+  // and legacy lowercase abbreviations
+  const s = sector.toLowerCase()
+  if (s.includes('bfsi') || s.includes('banking') || s.includes('public')) return true
   if (FRIA_REQUIRED_SECTORS.includes(sector)) return true
-  if (riskTier === 'high') return true
+  if (riskTier === 'high_risk' || riskTier === 'high') return true
   return false
 }
